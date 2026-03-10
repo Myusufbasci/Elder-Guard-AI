@@ -1,0 +1,19 @@
+{
+    "name": "@elder-guard/firebase-config",
+    "version": "0.0.0",
+    "private": true,
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "scripts": {
+        "build": "tsc --project tsconfig.json",
+        "clean": "rm -rf dist",
+        "lint": "tsc --noEmit"
+    },
+    "dependencies": {
+        "firebase": "10.8.0"
+    },
+    "devDependencies": {
+        "typescript": "5.3.3",
+        "@types/node": "20.11.5"
+    }
+}
