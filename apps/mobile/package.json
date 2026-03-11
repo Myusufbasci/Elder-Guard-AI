@@ -20,6 +20,8 @@
         "react-native": "0.76.5",
         "react-native-safe-area-context": "4.14.1",
         "react-native-screens": "4.4.0",
+        "@react-native-async-storage/async-storage": "1.23.1",
+        "firebase": "10.8.0",
         "zustand": "4.5.0",
         "@elder-guard/core": "workspace:*",
         "@elder-guard/firebase-config": "workspace:*"

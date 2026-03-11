@@ -1,11 +1,13 @@
 /**
- * Shared types and enums used across the Elder-Guard platform.
+ * Shared types and constants used across the Elder-Guard platform.
  */
 
 /** Firestore collection names (camelCase, plural per AGENT.md) */
 export const COLLECTIONS = {
+    users: "users",
     guardians: "guardians",
     elders: "elders",
+    devices: "devices",
     sensorReadings: "sensorReadings",
     alerts: "alerts",
 } as const;
