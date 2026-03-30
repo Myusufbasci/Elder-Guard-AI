@@ -9,6 +9,7 @@ export const COLLECTIONS = {
     elders: "elders",
     devices: "devices",
     sensorReadings: "sensorReadings",
+    anomalyScores: "anomalyScores",
     alerts: "alerts",
 } as const;
 
