@@ -33,6 +33,13 @@
             "expo-router",
             "expo-sensors",
             [
+                "expo-notifications",
+                {
+                    "icon": "./assets/icon.png",
+                    "color": "#0ea5e9"
+                }
+            ],
+            [
                 "expo-background-fetch",
                 {
                     "stopOnTerminate": false,

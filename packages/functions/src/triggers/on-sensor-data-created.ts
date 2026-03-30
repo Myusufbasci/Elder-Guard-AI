@@ -2,6 +2,7 @@ import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import * as admin from "firebase-admin";
 import { sensorReadingSchema, COLLECTIONS } from "@elder-guard/core";
 import { calculateAnomalyScore } from "../utils/calculate-anomaly-score";
+import { sendPushNotification } from "../utils/send-push-notification";
 
 /** Critical alert threshold (0-100 scale) */
 const ALERT_THRESHOLD = 80;
@@ -112,6 +113,37 @@ export const onSensorDataCreated = onDocumentCreated(
       console.warn(
         `[onSensorDataCreated] 🚨 ALERT generated (${severity}): score ${result.score} for elder ${reading.elderId}`
       );
+
+      // ── Step 5: Send push notification to guardian ──
+      // Look up the elder's guardian from the guardians collection
+      const guardianSnapshot = await db
+        .collection(COLLECTIONS.guardians)
+        .where("elderIds", "array-contains", reading.elderId)
+        .limit(1)
+        .get();
+
+      if (!guardianSnapshot.empty) {
+        const guardianDoc = guardianSnapshot.docs[0];
+        if (guardianDoc) {
+          const guardianId = guardianDoc.id;
+
+          await sendPushNotification(
+            guardianId,
+            `🚨 Elder Guard Alert (${severity.toUpperCase()})`,
+            alertDoc.message,
+            {
+              alertType,
+              elderId: reading.elderId,
+              score: result.score.toString(),
+              sensorReadingId: docId,
+            }
+          );
+        }
+      } else {
+        console.warn(
+          `[onSensorDataCreated] No guardian found for elder ${reading.elderId} — push notification skipped`
+        );
+      }
     }
   }
 );

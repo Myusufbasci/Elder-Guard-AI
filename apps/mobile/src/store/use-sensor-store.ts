@@ -34,6 +34,10 @@ export interface SensorStoreState {
   lastCollectedAt: number | null;
   /** Whether a collection is currently in progress */
   isCollecting: boolean;
+  /** Whether a sync is currently in progress */
+  isSyncing: boolean;
+  /** Timestamp of last successful sync */
+  lastSyncedAt: number | null;
   /** Last error message */
   error: string | null;
 
@@ -41,10 +45,14 @@ export interface SensorStoreState {
   addReading: (reading: SensorReading) => void;
   /** Get the last N readings from the buffer */
   getLatestReadings: (count: number) => SensorReading[];
+  /** Remove successfully synced readings by their IDs */
+  removeSyncedReadings: (ids: string[]) => void;
   /** Clear all readings from the buffer */
   clearBuffer: () => void;
   /** Set collecting status */
   setCollecting: (status: boolean) => void;
+  /** Set syncing status */
+  setSyncing: (status: boolean) => void;
   /** Set error message */
   setError: (error: string | null) => void;
 }
@@ -61,6 +69,8 @@ export const useSensorStore = create<SensorStoreState>()(
       totalCollected: 0,
       lastCollectedAt: null,
       isCollecting: false,
+      isSyncing: false,
+      lastSyncedAt: null,
       error: null,
 
       addReading: (reading: SensorReading) => {
@@ -87,12 +97,28 @@ export const useSensorStore = create<SensorStoreState>()(
         return readings.slice(-count);
       },
 
+      removeSyncedReadings: (ids: string[]) => {
+        set((state) => {
+          const idSet = new Set(ids);
+          const remaining = state.readings.filter((r) => !idSet.has(r.id));
+          return {
+            readings: remaining,
+            lastSyncedAt: Date.now(),
+            error: null,
+          };
+        });
+      },
+
       clearBuffer: () => {
         set({ readings: [], error: null });
       },
 
       setCollecting: (status: boolean) => {
         set({ isCollecting: status });
+      },
+
+      setSyncing: (status: boolean) => {
+        set({ isSyncing: status });
       },
 
       setError: (error: string | null) => {
@@ -109,6 +135,7 @@ export const useSensorStore = create<SensorStoreState>()(
         readings: state.readings,
         totalCollected: state.totalCollected,
         lastCollectedAt: state.lastCollectedAt,
+        lastSyncedAt: state.lastSyncedAt,
       }),
     }
   )
