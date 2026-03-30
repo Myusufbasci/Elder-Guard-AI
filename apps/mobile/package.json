@@ -10,18 +10,23 @@
         "android": "expo run:android",
         "ios": "expo run:ios",
         "lint": "expo lint",
-        "clean": "rm -rf .expo android ios"
+        "clean": "rm -rf .expo android ios",
+        "test": "jest"
     },
     "dependencies": {
         "expo": "52.0.23",
+        "expo-background-fetch": "13.0.3",
         "expo-router": "4.0.14",
+        "expo-sensors": "14.0.2",
         "expo-status-bar": "2.0.1",
+        "expo-task-manager": "12.0.3",
         "react": "18.3.1",
         "react-native": "0.76.5",
         "react-native-safe-area-context": "4.14.1",
         "react-native-screens": "4.4.0",
         "@react-native-async-storage/async-storage": "1.23.1",
         "firebase": "10.8.0",
+        "uuid": "9.0.1",
         "zustand": "4.5.0",
         "@elder-guard/core": "workspace:*",
         "@elder-guard/firebase-config": "workspace:*"
@@ -29,6 +34,11 @@
     "devDependencies": {
         "typescript": "5.3.3",
         "@types/react": "18.2.48",
-        "@babel/core": "7.24.0"
+        "@types/uuid": "9.0.7",
+        "@babel/core": "7.24.0",
+        "jest": "29.7.0",
+        "ts-jest": "29.1.2",
+        "@types/jest": "29.5.11",
+        "zod": "3.22.4"
     }
 }

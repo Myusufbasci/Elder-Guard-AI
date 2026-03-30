@@ -17,7 +17,10 @@
         ],
         "ios": {
             "supportsTablet": true,
-            "bundleIdentifier": "com.elderguard.mobile"
+            "bundleIdentifier": "com.elderguard.mobile",
+            "infoPlist": {
+                "UIBackgroundModes": ["fetch", "processing"]
+            }
         },
         "android": {
             "adaptiveIcon": {
@@ -27,7 +30,15 @@
             "package": "com.elderguard.mobile"
         },
         "plugins": [
-            "expo-router"
+            "expo-router",
+            "expo-sensors",
+            [
+                "expo-background-fetch",
+                {
+                    "stopOnTerminate": false,
+                    "startOnBoot": true
+                }
+            ]
         ]
     }
 }
