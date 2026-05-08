@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 # Copy source code
 COPY src ./src
@@ -29,7 +29,7 @@ RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 COPY package*.json ./
 
 # Install only production dependencies
-RUN npm install --omit=dev
+RUN npm install --omit=dev --legacy-peer-deps
 
 # Copy built application from builder
 COPY --from=builder /app/dist ./dist
