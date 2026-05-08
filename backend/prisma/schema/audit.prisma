@@ -1,0 +1,27 @@
+// Audit logging — aligned to INTEGRATION.md DB Schema Outline + Pattern 16.
+// audit_logs is converted to a TimescaleDB hypertable in the migration SQL.
+// onDelete: SetNull on userId — deleting a user must NOT cascade-delete audit trail (Pattern 16).
+
+model AuditLog {
+  id            String   @default(uuid()) @db.Uuid
+  userId        String?  @db.Uuid
+  action        String
+  ipAddress     String?
+  userAgent     String?
+  requestData   Json?
+  responseData  Json?
+  statusCode    Int?
+  duration      Int?     // milliseconds
+  correlationId String?
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // Composite PK includes createdAt — TimescaleDB requires unique constraints
+  // on hypertables to include the partition (time) column.
+  @@id([id, createdAt])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([action])
+  @@index([correlationId])
+  @@map("audit_logs")
+}

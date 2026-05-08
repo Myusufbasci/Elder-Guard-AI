@@ -1,0 +1,162 @@
+version: '3.8'
+
+services:
+  # ─── PostgreSQL + TimescaleDB ───────────────────────────────────────────
+  postgres:
+    image: timescale/timescaledb:latest-pg18
+    container_name: eldercare-postgres-prod
+    environment:
+      POSTGRES_USER: eldercare
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: eldercare_prod
+      POSTGRES_INITDB_ARGS: ''
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eldercare -d eldercare_prod"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - eldercare-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+
+  # ─── Valkey Cache/Queue ──────────────────────────────────────────────────
+  valkey:
+    image: valkey/valkey:8.1-alpine
+    container_name: eldercare-valkey-prod
+    command: valkey-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - valkey_prod_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - eldercare-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+        reservations:
+          memory: 64M
+
+  # ─── NestJS Backend ───────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: eldercare-backend-prod
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://eldercare:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD}@postgres:5432/eldercare_prod
+      REDIS_URL: redis://valkey:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET must be set}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET must be set}
+      JWT_PAIRING_SECRET: ${JWT_PAIRING_SECRET:?JWT_PAIRING_SECRET must be set}
+      JWT_ACCESS_TTL: 8h
+      JWT_REFRESH_TTL: 30d
+      JWT_PAIRING_TTL: 15m
+      BCRYPT_ROUNDS: 12
+      FIREBASE_CREDENTIALS_PATH: /app/firebase-credentials.json
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY must be set}
+      APP_PORT: '3000'
+      APP_HOST: 0.0.0.0
+      LOG_LEVEL: info
+    volumes:
+      # Mount firebase credentials read-only if present
+      - ${FIREBASE_CREDENTIALS_PATH:-/dev/null}:/app/firebase-credentials.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    networks:
+      - eldercare-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+        reservations:
+          memory: 256M
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/v1/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ─── Web Dashboard (Next.js) ─────────────────────────────────────────────
+  web:
+    build:
+      context: ./caregiver-web
+      dockerfile: Dockerfile
+    container_name: eldercare-web-prod
+    environment:
+      NODE_ENV: production
+      # Internal Docker network URL for server-side fetches
+      API_URL: http://backend:3000
+      # Change this to your public domain/IP when deploying
+      NEXT_PUBLIC_API_URL: https://${DOMAIN_NAME:-eldercare.example.com}/v1
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - eldercare-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # ─── Nginx Reverse Proxy ─────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.30-alpine
+    container_name: eldercare-nginx-prod
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./backend/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Let's Encrypt certificates (populated by Certbot)
+      - ./certbot/conf:/etc/letsencrypt:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      web:
+        condition: service_started
+    networks:
+      - eldercare-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 32M
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/v1/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# ─── Networks ────────────────────────────────────────────────────────────────
+networks:
+  eldercare-network:
+    driver: bridge
+
+# ─── Volumes ────────────────────────────────────────────────────────────────
+volumes:
+  postgres_prod_data:
+  valkey_prod_data:

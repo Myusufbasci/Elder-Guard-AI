@@ -1,0 +1,41 @@
+// Telemetry and anomaly detection models.
+// Telemetry table is converted to a TimescaleDB hypertable in the migration SQL
+// (manual DDL appended after Prisma's generated CREATE TABLE — see AGENTS.md Rule 4).
+// Continuous aggregates (telemetry_1m, telemetry_1h) and compression/retention
+// policies are also created in the same migration file.
+
+model Telemetry {
+  time       DateTime @db.Timestamptz(3)
+  deviceId   String   @db.Uuid
+  metric     String   // TEXT — heart_rate | resting_heart_rate | steps | sleep_duration | location_lat | location_lng
+  value      Float    @db.DoublePrecision
+  quality    Int?     @db.SmallInt
+  ingestedAt DateTime @default(now()) @db.Timestamptz(3)
+
+  // Composite PK includes the time column — required for TimescaleDB hypertable
+  // unique-constraint compatibility, and natural for time-series identity.
+  @@id([time, deviceId, metric])
+  @@map("telemetry")
+}
+
+model AnomalyEvent {
+  id             String      @id @default(uuid()) @db.Uuid
+  elderId        String      @db.Uuid
+  metric         String
+  kind           AnomalyKind
+  severity       Severity
+  detectedAt     DateTime    @default(now()) @db.Timestamptz(3)
+  modifiedZScore Float       @db.DoublePrecision
+  observedValue  Float       @db.DoublePrecision
+  medianValue    Float       @db.DoublePrecision
+  madValue       Float       @db.DoublePrecision
+  acknowledged   Boolean     @default(false)
+  acknowledgedAt DateTime?
+
+  elder         ElderProfile      @relation(fields: [elderId], references: [userId], onDelete: Cascade)
+  notifications NotificationLog[]
+
+  @@index([elderId, detectedAt(sort: Desc)])
+  @@index([acknowledged])
+  @@map("anomaly_events")
+}

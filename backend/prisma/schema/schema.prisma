@@ -1,0 +1,13 @@
+// Root of the Prisma multi-file schema (Prisma 6 prismaSchemaFolder preview).
+// All sibling .prisma files in this directory are auto-discovered by the CLI.
+// CLI resolution: package.json -> "prisma": { "schema": "prisma/schema" }.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["prismaSchemaFolder"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

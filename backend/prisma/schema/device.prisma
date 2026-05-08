@@ -1,0 +1,34 @@
+// Device and pairing models — aligned to INTEGRATION.md DB Schema Outline.
+
+model Device {
+  id         String    @id @default(uuid()) @db.Uuid
+  elderId    String    @db.Uuid
+  fcmToken   String?
+  lastSeenAt DateTime?
+  model      String?
+  osVersion  String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  elder ElderProfile @relation(fields: [elderId], references: [userId], onDelete: Cascade)
+
+  @@index([elderId])
+  @@map("devices")
+}
+
+// 6-digit numeric code, 15-min TTL, single-use (redeemedAt set when consumed).
+// Tied to ElderProfile (not Device) — Device is created on successful redemption.
+model DevicePairing {
+  id         String    @id @default(uuid()) @db.Uuid
+  code       String    @unique
+  elderId    String    @db.Uuid
+  expiresAt  DateTime
+  redeemedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  elder ElderProfile @relation(fields: [elderId], references: [userId], onDelete: Cascade)
+
+  @@index([elderId])
+  @@index([expiresAt])
+  @@map("device_pairings")
+}

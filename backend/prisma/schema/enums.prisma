@@ -1,0 +1,32 @@
+// Shared enumerations — aligned to INTEGRATION.md spec.
+
+enum UserRole {
+  CAREGIVER
+  ELDER
+  ADMIN
+}
+
+enum JwtPurpose {
+  ACCESS
+  REFRESH
+  DEVICE_PAIRING
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AnomalyKind {
+  THRESHOLD_BREACH
+  PERSISTENCE
+  MULTI_METRIC
+}
+
+// MetricType is intentionally NOT defined here.
+// Per REVERSE_ENGINEERING_DOC Section 5, telemetry.metric is stored as TEXT
+// to allow new metrics without schema migrations. The set of valid string
+// values (heart_rate, resting_heart_rate, steps, sleep_duration, location_lat,
+// location_lng) is enforced at the API boundary via class-validator @IsIn.

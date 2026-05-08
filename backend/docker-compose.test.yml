@@ -1,0 +1,82 @@
+# docker-compose.test.yml — Isolated E2E test infrastructure
+#
+# Usage:
+#   docker compose -f docker-compose.test.yml up -d          # start infra
+#   docker compose -f docker-compose.test.yml run test-runner # run tests
+#   docker compose -f docker-compose.test.yml down -v         # tear down
+#
+# Security: NO host ports exposed for DB/cache services.
+
+services:
+  postgres-test:
+    image: timescale/timescaledb:latest-pg18
+    container_name: eldercare-postgres-test
+    environment:
+      POSTGRES_USER: eldercare_test
+      POSTGRES_PASSWORD: eldercare_test_password
+      POSTGRES_DB: eldercare_test
+    # No ports: exposed — internal network only
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eldercare_test -d eldercare_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - test-network
+
+  valkey-test:
+    image: valkey/valkey:8.1-alpine
+    container_name: eldercare-valkey-test
+    command: valkey-server --appendonly no
+    # No ports: exposed — internal network only
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - test-network
+
+  test-runner:
+    image: node:22
+    container_name: eldercare-test-runner
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - test_node_modules:/app/node_modules
+    environment:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://eldercare_test:eldercare_test_password@postgres-test:5432/eldercare_test
+      REDIS_URL: redis://valkey-test:6379
+      JWT_ACCESS_SECRET: e2e-test-access-secret-must-be-at-least-32-characters-long
+      JWT_REFRESH_SECRET: e2e-test-refresh-secret-must-be-at-least-32-characters-long
+      JWT_PAIRING_SECRET: e2e-test-pairing-secret-must-be-at-least-32-characters-long
+      JWT_ACCESS_TTL: 8h
+      JWT_REFRESH_TTL: 30d
+      JWT_PAIRING_TTL: 15m
+      BCRYPT_ROUNDS: "10"
+      FIREBASE_CREDENTIALS_PATH: /dev/null
+      GEMINI_API_KEY: test-gemini-key-placeholder
+      LOG_LEVEL: error
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      valkey-test:
+        condition: service_healthy
+    command: >
+      bash -c "npm install --legacy-peer-deps &&
+               npx prisma generate &&
+               npx prisma migrate deploy &&
+               npx jest --config test/jest-e2e.json --forceExit --detectOpenHandles"
+    networks:
+      - test-network
+
+volumes:
+  postgres_test_data:
+  test_node_modules:
+
+networks:
+  test-network:
+    driver: bridge

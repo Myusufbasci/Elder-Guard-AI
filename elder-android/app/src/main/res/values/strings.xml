@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Eldercare</string>
+    <string name="pairing_title">Connect to caregiver</string>
+    <string name="pairing_hint">Enter 6-digit code</string>
+    <string name="pairing_button">Connect</string>
+    <string name="paired_status">System Connected</string>
+    <string name="paired_subtext">Health monitoring is active</string>
+    <string name="notif_channel_sync">System</string>
+    <string name="notif_sync_title">System Connected</string>
+</resources>

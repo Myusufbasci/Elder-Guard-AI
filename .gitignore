@@ -1,0 +1,15 @@
+# Root level gitignore
+node_modules/
+.env
+.env.*
+*.log
+.DS_Store
+cloudflared.exe
+firebase-credentials.json
+backend/firebase-credentials.json
+
+# Agent & AI generated files (Hocaya gitmemesi gerekenler)
+*.md
+.agentignore
+examples/
+start-dev.bat

@@ -1,0 +1,5 @@
+{
+  "typescript.tsdk": "caregiver-web/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "java.configuration.updateBuildConfiguration": "automatic"
+}

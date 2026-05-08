@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg18
+    container_name: eldercare-postgres
+    environment:
+      POSTGRES_USER: eldercare
+      POSTGRES_PASSWORD: eldercare_dev_password
+      POSTGRES_DB: eldercare_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eldercare -d eldercare_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - eldercare-network
+
+  valkey:
+    image: valkey/valkey:8.1-alpine
+    container_name: eldercare-valkey
+    command: valkey-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - eldercare-network
+
+volumes:
+  postgres_data:
+  valkey_data:
+
+networks:
+  eldercare-network:
+    driver: bridge

@@ -1,0 +1,143 @@
+import { DashboardService } from './dashboard.service';
+import type { PrismaService } from '../../common/prisma/prisma.service';
+
+describe('DashboardService', () => {
+  let service: DashboardService;
+  let mockPrisma: {
+    careLink: { findMany: jest.Mock };
+    device: { findMany: jest.Mock };
+    notificationLog: { findFirst: jest.Mock };
+    elderProfile: { findUnique: jest.Mock };
+    $queryRawUnsafe: jest.Mock };
+  };
+
+  beforeEach(() => {
+    mockPrisma = {
+      careLink: { findMany: jest.fn() },
+      device: { findMany: jest.fn() },
+      notificationLog: { findFirst: jest.fn() },
+      elderProfile: { findUnique: jest.fn() },
+      $queryRawUnsafe: jest.fn(),
+    };
+    service = new DashboardService(mockPrisma as unknown as PrismaService);
+  });
+
+  describe('listElders', () => {
+    it('should return only elders linked to the authenticated caregiver', async () => {
+      mockPrisma.careLink.findMany.mockResolvedValue([
+        {
+          elderId: 'elder-1',
+          createdAt: new Date('2026-01-01'),
+          elder: {
+            dateOfBirth: new Date('1940-01-01'),
+            user: { firstName: 'Alice', lastName: 'Smith', email: 'alice@test.com' },
+          },
+        },
+      ]);
+
+      const result = await service.listElders('caregiver-1');
+
+      expect(mockPrisma.careLink.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { caregiverId: 'caregiver-1' },
+        }),
+      );
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual(
+        expect.objectContaining({
+          id: 'elder-1',
+          firstName: 'Alice',
+          lastName: 'Smith',
+        }),
+      );
+    });
+
+    it('should return empty array when caregiver has no linked elders', async () => {
+      mockPrisma.careLink.findMany.mockResolvedValue([]);
+      const result = await service.listElders('caregiver-no-links');
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('getVitals', () => {
+    it('should query telemetry_1h continuous aggregate with date range', async () => {
+      mockPrisma.device.findMany.mockResolvedValue([{ id: 'device-1' }]);
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([
+        { bucket: new Date('2026-04-28T00:00:00Z'), device_id: 'device-1', metric: 'heart_rate', avg_value: 72, min_value: 65, max_value: 80 },
+        { bucket: new Date('2026-04-28T01:00:00Z'), device_id: 'device-1', metric: 'heart_rate', avg_value: 75, min_value: 68, max_value: 82 },
+      ]);
+
+      const result = await service.getVitals(
+        'elder-1',
+        '2026-04-22T00:00:00Z',
+        '2026-04-29T00:00:00Z',
+        ['heart_rate'],
+      );
+
+      const sqlArg = mockPrisma.$queryRawUnsafe.mock.calls[0][0] as string;
+      expect(sqlArg).toContain('telemetry_1h');
+      expect(sqlArg).not.toMatch(/\bFROM telemetry\b(?!_)/);
+      expect(result).toBeDefined();
+    });
+
+    it('should default to last 7 days and all vitals metrics when no params provided', async () => {
+      mockPrisma.device.findMany.mockResolvedValue([{ id: 'device-1' }]);
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([]);
+
+      await service.getVitals('elder-1');
+
+      expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalled();
+      const args = mockPrisma.$queryRawUnsafe.mock.calls[0];
+      const metricsArg = args[2] as string[];
+      expect(metricsArg).toEqual(
+        expect.arrayContaining(['heart_rate', 'resting_heart_rate', 'steps', 'sleep_duration']),
+      );
+    });
+  });
+
+  describe('getLocation', () => {
+    it('should return latest location and 24h trail', async () => {
+      mockPrisma.device.findMany.mockResolvedValue([{ id: 'device-1' }]);
+      mockPrisma.$queryRawUnsafe
+        .mockResolvedValueOnce([{ lat: 41.0082, lng: 28.9784, time: new Date() }])
+        .mockResolvedValueOnce([
+          { lat: 41.0082, lng: 28.9784, time: new Date() },
+          { lat: 41.0090, lng: 28.9790, time: new Date(Date.now() - 3600_000) },
+        ]);
+
+      const result = await service.getLocation('elder-1');
+
+      expect(result).toHaveProperty('latest');
+      expect(result).toHaveProperty('trail');
+      expect(result.latest).toEqual(
+        expect.objectContaining({ lat: 41.0082, lng: 28.9784 }),
+      );
+      expect(result.trail).toHaveLength(2);
+    });
+  });
+
+  describe('getSummary', () => {
+    it('should return latest AI daily summary from NotificationLog', async () => {
+      mockPrisma.elderProfile.findUnique.mockResolvedValue({ userId: 'elder-1' });
+      mockPrisma.notificationLog.findFirst.mockResolvedValue({
+        id: 'log-1',
+        content: { status_category: 'stable', summary_text: 'All good' },
+        sentAt: new Date('2026-04-29T06:00:00Z'),
+      });
+
+      const result = await service.getSummary('elder-1');
+
+      expect(mockPrisma.notificationLog.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ type: 'daily_summary' }),
+          orderBy: { sentAt: 'desc' },
+        }),
+      );
+      expect(result).toEqual(
+        expect.objectContaining({
+          content: expect.objectContaining({ status_category: 'stable' }),
+        }),
+      );
+    });
+  });
+});

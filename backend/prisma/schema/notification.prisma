@@ -1,0 +1,31 @@
+// Notification and Firebase messaging models — aligned to INTEGRATION.md.
+
+model PushToken {
+  token     String   @id // FCM token is the natural unique identifier
+  userId    String   @db.Uuid
+  platform  String   // "web" | "android" | "ios"
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_tokens")
+}
+
+model NotificationLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @db.Uuid
+  anomalyId      String?  @db.Uuid
+  type           String   // e.g., "anomaly_alert"
+  content        Json
+  sentAt         DateTime @default(now())
+  deliveryStatus String   // "pending" | "delivered" | "failed"
+
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  anomaly AnomalyEvent? @relation(fields: [anomalyId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([anomalyId])
+  @@index([sentAt])
+  @@map("notification_logs")
+}
