@@ -8,7 +8,7 @@ cloudflared.exe
 firebase-credentials.json
 backend/firebase-credentials.json
 
-# Agent & AI generated files (Hocaya gitmemesi gerekenler)
+
 *.md
 .agentignore
 examples/
