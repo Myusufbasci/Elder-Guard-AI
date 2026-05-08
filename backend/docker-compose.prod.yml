@@ -52,7 +52,7 @@ services:
   # ─── NestJS Backend ───────────────────────────────────────────────────────
   backend:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
     container_name: eldercare-backend-prod
     environment:
@@ -98,7 +98,7 @@ services:
   # ─── Web Dashboard (Next.js) ─────────────────────────────────────────────
   web:
     build:
-      context: ./caregiver-web
+      context: ../caregiver-web
       dockerfile: Dockerfile
     container_name: eldercare-web-prod
     environment:
@@ -128,9 +128,9 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./backend/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
       # Let's Encrypt certificates (populated by Certbot)
-      - ./certbot/conf:/etc/letsencrypt:ro
+      - ../certbot/conf:/etc/letsencrypt:ro
     depends_on:
       backend:
         condition: service_healthy
