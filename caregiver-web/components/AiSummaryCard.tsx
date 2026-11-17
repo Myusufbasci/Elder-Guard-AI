@@ -1,8 +1,10 @@
+import type { ReactNode } from 'react';
 import StatusBadge from './StatusBadge';
 
 /**
  * AI daily summary card.
  * Displays the latest Gemini-generated summary from NotificationLog.
+ * `action` is an optional header slot (e.g. the on-demand "generate now" button).
  */
 interface AiSummaryCardProps {
   summary: {
@@ -12,15 +14,19 @@ interface AiSummaryCardProps {
     action_recommendation: string | null;
   } | null;
   generatedAt?: string;
+  action?: ReactNode;
 }
 
-export default function AiSummaryCard({ summary, generatedAt }: AiSummaryCardProps) {
+export default function AiSummaryCard({ summary, generatedAt, action }: AiSummaryCardProps) {
   if (!summary) {
     return (
       <div className="rounded-2xl bg-surface-900 border border-surface-800 p-5">
-        <h3 className="text-sm font-semibold text-surface-300 uppercase tracking-wider mb-4">
-          AI Daily Summary
-        </h3>
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h3 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">
+            AI Daily Summary
+          </h3>
+          {action}
+        </div>
         <div className="text-center py-6">
           <div className="w-12 h-12 mx-auto rounded-xl bg-surface-800 flex items-center justify-center text-surface-500 mb-3">
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -36,11 +42,14 @@ export default function AiSummaryCard({ summary, generatedAt }: AiSummaryCardPro
 
   return (
     <div className="rounded-2xl bg-surface-900 border border-surface-800 p-5">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between gap-3 mb-4">
         <h3 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">
           AI Daily Summary
         </h3>
-        <StatusBadge status={summary.status_category} />
+        <div className="flex items-center gap-3">
+          {action}
+          <StatusBadge status={summary.status_category} />
+        </div>
       </div>
 
       <p className="text-surface-300 text-sm leading-relaxed mb-4">

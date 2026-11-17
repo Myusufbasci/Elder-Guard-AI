@@ -64,6 +64,9 @@ export async function apiFetch<T>(
     throw new Error(error.message || `API error: ${res.status}`);
   }
 
+  // 204 No Content (e.g., DELETE) — backend returns no body, no envelope.
+  if (res.status === 204) return undefined as T;
+
   const envelope = (await res.json()) as ApiEnvelope<T>;
   return envelope.data;
 }

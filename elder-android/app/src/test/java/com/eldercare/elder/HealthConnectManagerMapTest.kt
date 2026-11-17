@@ -27,7 +27,7 @@ class HealthConnectManagerMapTest {
                 HeartRateRecord.Sample(start, 72L),
                 HeartRateRecord.Sample(start.plusSeconds(60), 75L),
             ),
-            metadata = Metadata.manualEntry(),
+            metadata = Metadata(),
         )
 
         val mapped = manager.mapRecord(record)
@@ -49,7 +49,7 @@ class HealthConnectManagerMapTest {
             endTime = end,
             endZoneOffset = ZoneOffset.UTC,
             count = 4321L,
-            metadata = Metadata.manualEntry(),
+            metadata = Metadata(),
         )
 
         val mapped = manager.mapRecord(record)

@@ -13,7 +13,11 @@ class AuthInterceptor @Inject constructor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
         val skipAuth = original.url.encodedPath.let {
-            it.endsWith("/v1/elder/pairing/redeem") || it.endsWith("/v1/auth/refresh")
+            it.endsWith("/v1/elder/pairing/redeem") ||
+                it.endsWith("/v1/auth/refresh") ||
+                it.endsWith("/v1/auth/login") ||
+                it.endsWith("/v1/auth/register") ||
+                it.endsWith("/v1/auth/google")
         }
         if (skipAuth) return chain.proceed(original)
 

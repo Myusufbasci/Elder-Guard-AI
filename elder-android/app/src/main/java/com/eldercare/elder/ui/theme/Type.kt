@@ -6,37 +6,38 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 /**
- * ElderCare typography — accessible sizing for elderly users.
+ * ElderCare typography — accessible sizing for elderly users, with the tight
+ * heading tracking of the "warm cream / charcoal" design signature.
  *
- * Body text minimum 16sp per AGENTS.md requirement.
- * Heading styles use default sans-serif (system font).
- * If EB_Garamond serif font is desired for headings on Android,
- * add the Google Fonts dependency and set fontFamily here.
+ * Body text minimum 16sp per AGENTS.md requirement. Headings use the system
+ * grotesk (a close stand-in for the web panel's Hanken Grotesk). To match the
+ * web exactly, add `androidx.compose.ui:ui-text-google-fonts`, register a
+ * GoogleFont.Provider, and set `fontFamily = FontFamily(Font(GoogleFont("Hanken Grotesk"), provider))` here.
  */
 val EldercareTypography = Typography(
     headlineLarge = TextStyle(
         fontWeight = FontWeight.Bold,
         fontSize = 32.sp,
         lineHeight = 40.sp,
-        letterSpacing = 0.sp,
+        letterSpacing = (-0.4).sp,
     ),
     headlineMedium = TextStyle(
         fontWeight = FontWeight.Bold,
         fontSize = 28.sp,
         lineHeight = 36.sp,
-        letterSpacing = 0.sp,
+        letterSpacing = (-0.4).sp,
     ),
     headlineSmall = TextStyle(
         fontWeight = FontWeight.SemiBold,
         fontSize = 24.sp,
         lineHeight = 32.sp,
-        letterSpacing = 0.sp,
+        letterSpacing = (-0.3).sp,
     ),
     titleLarge = TextStyle(
         fontWeight = FontWeight.SemiBold,
         fontSize = 22.sp,
         lineHeight = 28.sp,
-        letterSpacing = 0.sp,
+        letterSpacing = (-0.3).sp,
     ),
     titleMedium = TextStyle(
         fontWeight = FontWeight.Medium,

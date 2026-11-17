@@ -3,24 +3,23 @@ import { apiFetch } from '@/lib/api';
 import VitalsCard from '@/components/VitalsCard';
 import AiSummaryCard from '@/components/AiSummaryCard';
 import MapClient from './MapClient';
+import ElderPresenceWatcher from './ElderPresenceWatcher';
+import GenerateSummaryButton from './GenerateSummaryButton';
 
 /**
  * Elder detail page — Server component.
  * Fetches elder summary, vitals, and location from NestJS API.
  */
 
-interface ElderVitals {
-  metrics: Array<{
-    bucket: string;
-    metric: string;
-    avg_value: number;
-    min_value: number;
-    max_value: number;
-  }>;
+// Latest raw reading per metric (instant — no continuous-aggregate lag).
+interface LatestVital {
+  metric: string;
+  value: number;
+  time: string;
 }
 
 interface ElderLocation {
-  current: { lat: number; lng: number; time: string } | null;
+  latest: { lat: number; lng: number; time: string } | null;
   trail: Array<{ lat: number; lng: number; time: string }>;
 }
 
@@ -44,22 +43,26 @@ export async function generateMetadata({ params }: { params: Promise<{ elderId: 
 export default async function ElderDetailPage({ params }: { params: Promise<{ elderId: string }> }) {
   const { elderId } = await params;
 
-  // Fetch all data in parallel
-  const [vitalsResult, locationResult, summaryResult] = await Promise.allSettled([
-    apiFetch<ElderVitals>(`/v1/caregiver/elders/${elderId}/vitals?from=${new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()}`),
+  // Fetch all data in parallel. Vitals snapshot uses the raw "latest" endpoint so a
+  // just-synced reading shows immediately (no hourly-aggregate lag) — important for demos.
+  const [latestResult, locationResult, summaryResult] = await Promise.allSettled([
+    apiFetch<LatestVital[]>(`/v1/caregiver/elders/${elderId}/vitals/latest`),
     apiFetch<ElderLocation>(`/v1/caregiver/elders/${elderId}/location`),
     apiFetch<AiSummary>(`/v1/caregiver/elders/${elderId}/summary`),
   ]);
 
-  const vitals = vitalsResult.status === 'fulfilled' ? vitalsResult.value : null;
+  const latest = latestResult.status === 'fulfilled' ? latestResult.value : [];
   const location = locationResult.status === 'fulfilled' ? locationResult.value : null;
   const summaryData = summaryResult.status === 'fulfilled' ? summaryResult.value : null;
 
-  // Extract latest values per metric from vitals
-  const latestMetrics = extractLatestMetrics(vitals);
+  // Build snapshot cards from the latest raw reading per metric
+  const latestMetrics = buildLatestMetrics(latest);
 
   return (
     <div>
+      {/* Polls for elder removal (device reset); redirects to /elders on 404 */}
+      <ElderPresenceWatcher elderId={elderId} />
+
       {/* Header */}
       <div className="flex items-center gap-4 mb-8">
         <Link
@@ -107,6 +110,7 @@ export default async function ElderDetailPage({ params }: { params: Promise<{ el
         <AiSummaryCard
           summary={summaryData?.content ?? null}
           generatedAt={summaryData?.sentAt}
+          action={<GenerateSummaryButton elderId={elderId} />}
         />
 
         {/* Map — spans full width */}
@@ -116,7 +120,7 @@ export default async function ElderDetailPage({ params }: { params: Promise<{ el
               Location
             </h3>
             <MapClient
-              currentLocation={location?.current ?? null}
+              currentLocation={location?.latest ?? null}
               trail={location?.trail ?? []}
             />
           </div>
@@ -126,32 +130,16 @@ export default async function ElderDetailPage({ params }: { params: Promise<{ el
   );
 }
 
-/** Extract latest metric values into VitalsCard-compatible format */
-function extractLatestMetrics(vitals: ElderVitals | null) {
-  if (!vitals || vitals.metrics.length === 0) {
-    return [
-      { label: 'Heart Rate', value: '—', unit: 'bpm', icon: heartIcon() },
-      { label: 'Resting HR', value: '—', unit: 'bpm', icon: restingHrIcon() },
-      { label: 'Steps', value: '—', unit: 'today', icon: stepsIcon() },
-      { label: 'Sleep', value: '—', unit: 'hrs', icon: sleepIcon() },
-    ];
-  }
-
-  const latestValue: Record<string, number> = {};
-  const latestBucket: Record<string, string> = {};
-  for (const m of vitals.metrics) {
-    const prevBucket = latestBucket[m.metric];
-    if (!prevBucket || new Date(m.bucket) > new Date(prevBucket)) {
-      latestValue[m.metric] = m.avg_value;
-      latestBucket[m.metric] = m.bucket;
-    }
-  }
+/** Build VitalsCard rows from the latest raw reading per metric. */
+function buildLatestMetrics(latest: LatestVital[]) {
+  const v: Record<string, number> = {};
+  for (const row of latest) v[row.metric] = Number(row.value);
 
   return [
-    { label: 'Heart Rate', value: latestValue['heart_rate']?.toFixed(0) ?? '—', unit: 'bpm', icon: heartIcon() },
-    { label: 'Resting HR', value: latestValue['resting_heart_rate']?.toFixed(0) ?? '—', unit: 'bpm', icon: restingHrIcon() },
-    { label: 'Steps', value: latestValue['steps']?.toFixed(0) ?? '—', unit: 'today', icon: stepsIcon() },
-    { label: 'Sleep', value: latestValue['sleep_duration'] ? (latestValue['sleep_duration'] / 3600).toFixed(1) : '—', unit: 'hrs', icon: sleepIcon() },
+    { label: 'Heart Rate', value: v['heart_rate'] != null ? v['heart_rate'].toFixed(0) : '—', unit: 'bpm', icon: heartIcon() },
+    { label: 'Resting HR', value: v['resting_heart_rate'] != null ? v['resting_heart_rate'].toFixed(0) : '—', unit: 'bpm', icon: restingHrIcon() },
+    { label: 'Steps', value: v['steps'] != null ? v['steps'].toFixed(0) : '—', unit: 'today', icon: stepsIcon() },
+    { label: 'Sleep', value: v['sleep_duration'] != null ? (v['sleep_duration'] / 3600).toFixed(1) : '—', unit: 'hrs', icon: sleepIcon() },
   ];
 }
 

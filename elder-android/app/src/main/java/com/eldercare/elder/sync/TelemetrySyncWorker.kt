@@ -34,15 +34,22 @@ class TelemetrySyncWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
+        // Session heartbeat: even when there is no telemetry to send, validate the
+        // elder still exists. A 401 here makes RefreshAuthenticator clear tokens so
+        // a caregiver-side deletion logs the device out (caregiver/elder sync).
+        runCatching { api.getMe() }
         val deviceId = tokenStore.deviceId() ?: return Result.failure()
 
+        // Health Connect pull is BEST-EFFORT and independent of location. If it
+        // fails — no HC permission, Mi Fitness not feeding Health Connect, etc. —
+        // we still collect and send GPS location. Location must never depend on
+        // health data being available.
         val pull = try {
             healthConnect.pullChanges(syncTokenStore)
-        } catch (e: SecurityException) {
-            return Result.failure()
         } catch (e: Exception) {
-            return Result.retry()
+            null
         }
+        val healthSamples = pull?.samples ?: emptyList()
 
         val location = locationManager.lastReducedFix()
         val locationSamples: List<TelemetrySample> = location?.let {
@@ -52,7 +59,8 @@ class TelemetrySyncWorker @AssistedInject constructor(
             )
         } ?: emptyList()
 
-        val all = pull.samples + locationSamples
+        val all = healthSamples + locationSamples
+        // Nothing from either source this tick — try again next period.
         if (all.isEmpty()) return Result.success()
 
         val batches = all.chunked(MAX_BATCH)
@@ -66,8 +74,10 @@ class TelemetrySyncWorker @AssistedInject constructor(
             if (!response.isSuccessful) return Result.failure()
         }
 
-        // Persist advanced changes tokens only after successful POST.
-        for ((type, token) in pull.newTokens) syncTokenStore.setToken(type, token)
+        // Persist advanced changes tokens only when the HC pull actually succeeded.
+        if (pull != null) {
+            for ((type, token) in pull.newTokens) syncTokenStore.setToken(type, token)
+        }
         return Result.success()
     }
 

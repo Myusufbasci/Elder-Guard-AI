@@ -1,9 +1,10 @@
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtPurpose, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
+import type { MailService } from '../mail/mail.service';
 import { REFRESH_JTI_PREFIX } from './strategies/jwt-refresh.strategy';
 
 type Mock<T> = {
@@ -12,14 +13,20 @@ type Mock<T> = {
 
 describe('AuthService', () => {
   let service: AuthService;
-  let prisma: { user: Mock<{ findUnique: any; create: any }> };
-  let valkey: Mock<{ setEx: any; del: any; get: any }>;
+  let prisma: { user: Mock<{ findUnique: any; create: any; update: any }> };
+  let valkey: Mock<{ setEx: any; del: any; get: any; setNxEx: any }>;
   let jwt: Mock<{ signAsync: any }>;
   let config: { getOrThrow: jest.Mock; get: jest.Mock };
+  let mail: Mock<{ sendVerificationEmail: any }>;
 
   beforeEach(() => {
-    prisma = { user: { findUnique: jest.fn(), create: jest.fn() } as any };
-    valkey = { setEx: jest.fn().mockResolvedValue(undefined), del: jest.fn(), get: jest.fn() } as any;
+    prisma = { user: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() } as any };
+    valkey = {
+      setEx: jest.fn().mockResolvedValue(undefined),
+      del: jest.fn(),
+      get: jest.fn(),
+      setNxEx: jest.fn().mockResolvedValue(true),
+    } as any;
     jwt = { signAsync: jest.fn().mockImplementation(async (p: any, _o: any) => `signed:${p.purpose}:${p.jti}`) } as any;
     config = {
       getOrThrow: jest.fn((k: string) => `secret:${k}`),
@@ -30,12 +37,14 @@ describe('AuthService', () => {
         return d;
       }),
     };
+    mail = { sendVerificationEmail: jest.fn().mockResolvedValue(true) } as any;
 
     service = new AuthService(
       prisma as any,
       jwt as unknown as JwtService,
       valkey as any,
       config as unknown as ConfigService,
+      mail as unknown as MailService,
     );
   });
 
@@ -46,6 +55,8 @@ describe('AuthService', () => {
       email: 'a@b.c',
       role: UserRole.CAREGIVER,
       passwordHash: 'hashed',
+      firstName: 'A',
+      emailVerified: false,
     });
 
     const tokens = await service.register({
@@ -57,6 +68,8 @@ describe('AuthService', () => {
 
     expect(tokens.accessToken).toMatch(/^signed:ACCESS:/);
     expect(tokens.refreshToken).toMatch(/^signed:REFRESH:/);
+    // A verification email is sent on registration (soft flow — still logged in).
+    expect(mail.sendVerificationEmail).toHaveBeenCalledWith('a@b.c', 'A', expect.any(String));
     expect(prisma.user.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -128,6 +141,68 @@ describe('AuthService', () => {
   it('refresh throws 401 when old JTI is not in store (reuse race)', async () => {
     valkey.del.mockResolvedValue(0);
     await expect(service.refresh('uuid-1', 'old-jti')).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('verifyEmail consumes the token and flips emailVerified', async () => {
+    valkey.get.mockResolvedValue('uuid-9');
+    valkey.del.mockResolvedValue(1);
+    prisma.user.update.mockResolvedValue({ id: 'uuid-9', emailVerified: true });
+
+    const res = await service.verifyEmail('tok-abc');
+
+    expect(res).toEqual({ verified: true });
+    expect(valkey.del).toHaveBeenCalledWith(expect.stringContaining('tok-abc'));
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: 'uuid-9' },
+      data: { emailVerified: true },
+    });
+  });
+
+  it('verifyEmail throws NotFound on unknown/expired token', async () => {
+    valkey.get.mockResolvedValue(null);
+    await expect(service.verifyEmail('nope')).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('resendVerification re-sends when unverified and cooldown is free', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'uuid-1', email: 'a@b.c', firstName: 'A', emailVerified: false,
+    });
+    valkey.setNxEx.mockResolvedValue(true);
+
+    const res = await service.resendVerification('uuid-1');
+
+    expect(res).toEqual({ sent: true });
+    expect(mail.sendVerificationEmail).toHaveBeenCalledWith('a@b.c', 'A', expect.any(String));
+  });
+
+  it('resendVerification is a no-op when already verified', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'uuid-1', email: 'a@b.c', firstName: 'A', emailVerified: true,
+    });
+    const res = await service.resendVerification('uuid-1');
+    expect(res).toEqual({ sent: false });
+    expect(mail.sendVerificationEmail).not.toHaveBeenCalled();
+  });
+
+  it('resendVerification throws Conflict while on cooldown', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'uuid-1', email: 'a@b.c', firstName: 'A', emailVerified: false,
+    });
+    valkey.setNxEx.mockResolvedValue(false); // cooldown still active
+    await expect(service.resendVerification('uuid-1')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('getMe returns the account snapshot incl. emailVerified', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'uuid-1', email: 'a@b.c', firstName: 'A', lastName: 'B',
+      role: UserRole.CAREGIVER, emailVerified: false,
+    });
+    const me = await service.getMe('uuid-1');
+    expect(me).toEqual({
+      id: 'uuid-1', email: 'a@b.c', firstName: 'A', lastName: 'B',
+      role: UserRole.CAREGIVER, emailVerified: false,
+    });
   });
 
   it('issueTokens stamps role on ACCESS payload', async () => {

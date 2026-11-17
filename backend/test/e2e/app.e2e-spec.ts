@@ -206,7 +206,6 @@ describe('App E2E — Full Lifecycle', () => {
       .post('/v1/caregiver/elders')
       .set('Authorization', `Bearer ${caregiverAccessToken}`)
       .send({
-        email: 'elder-e2e@test.com',
         firstName: 'Test',
         lastName: 'Elder',
         dateOfBirth: '1945-06-15T00:00:00.000Z',

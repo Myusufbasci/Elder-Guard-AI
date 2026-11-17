@@ -83,7 +83,9 @@ export class TelemetryService {
     for (let i = 0; i < dto.samples.length; i++) {
       const s = dto.samples[i];
       const base = i * COLS_PER_ROW;
-      // (time, device_id, metric, value, quality, ingested_at=NOW())
+      // (time, "deviceId", metric, value, quality, "ingestedAt"=NOW())
+      // Column identifiers are camelCase (Prisma models have no @map), so they MUST
+      // be double-quoted in raw SQL — unquoted device_id folds to a nonexistent column.
       valueClauses.push(
         `($${base + 1}::timestamptz, $${base + 2}::uuid, $${base + 3}, $${base + 4}::double precision, $${base + 5}::smallint, NOW())`,
       );
@@ -97,9 +99,9 @@ export class TelemetryService {
     }
 
     const sql =
-      'INSERT INTO telemetry (time, device_id, metric, value, quality, ingested_at) VALUES ' +
+      'INSERT INTO telemetry (time, "deviceId", metric, value, quality, "ingestedAt") VALUES ' +
       valueClauses.join(', ') +
-      ' ON CONFLICT (time, device_id, metric) DO NOTHING';
+      ' ON CONFLICT (time, "deviceId", metric) DO NOTHING';
 
     const affected = await this.prisma.$executeRawUnsafe(sql, ...params);
     return typeof affected === 'number' ? affected : dto.samples.length;

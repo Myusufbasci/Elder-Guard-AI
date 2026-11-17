@@ -1,19 +1,17 @@
-import {
-  ConflictException,
-  GoneException,
-  HttpException,
-  HttpStatus,
-  NotFoundException,
-} from '@nestjs/common';
+import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { PairingService } from './pairing.service';
 
-describe('PairingService', () => {
+describe('PairingService (Valkey-backed deferred creation)', () => {
   let service: PairingService;
   let prisma: any;
-  let valkey: { incrWithExpire: jest.Mock; del: jest.Mock };
-  let jwt: { signAsync: jest.Mock };
-  let config: { getOrThrow: jest.Mock; get: jest.Mock };
+  let valkey: {
+    incrWithExpire: jest.Mock;
+    get: jest.Mock;
+    del: jest.Mock;
+    setEx: jest.Mock;
+    setNxEx: jest.Mock;
+  };
   let authService: { issueTokens: jest.Mock };
 
   beforeEach(() => {
@@ -21,129 +19,76 @@ describe('PairingService', () => {
     prisma = {
       user: { findUnique: jest.fn(), create: jest.fn() },
       careLink: { create: jest.fn() },
-      devicePairing: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
       device: { create: jest.fn() },
       $transaction: jest.fn(txCallable),
     };
     valkey = {
-      incrWithExpire: jest.fn(),
+      incrWithExpire: jest.fn().mockResolvedValue(1),
+      get: jest.fn(),
       del: jest.fn().mockResolvedValue(1),
+      setEx: jest.fn().mockResolvedValue(undefined),
+      setNxEx: jest.fn().mockResolvedValue(true),
     };
-    jwt = { signAsync: jest.fn().mockResolvedValue('pairing.jwt.token') };
-    config = {
-      getOrThrow: jest.fn().mockReturnValue('secret'),
-      get: jest.fn().mockReturnValue('15m'),
+    authService = {
+      issueTokens: jest.fn().mockResolvedValue({ accessToken: 'a', refreshToken: 'r' }),
     };
-    authService = { issueTokens: jest.fn().mockResolvedValue({ accessToken: 'a', refreshToken: 'r' }) };
 
-    service = new PairingService(
-      prisma,
-      valkey as any,
-      jwt as any,
-      config as any,
-      authService as any,
-    );
+    service = new PairingService(prisma, valkey as any, authService as any);
   });
 
   describe('generateCode', () => {
-    it('returns a 6-digit numeric code', async () => {
-      prisma.user.findUnique.mockResolvedValue(null);
-      // Make $transaction return the elder synthesized below.
-      prisma.$transaction.mockImplementation(async (cb: any) => {
-        prisma.user.create.mockResolvedValue({ id: 'elder-uuid', role: UserRole.ELDER });
-        return cb(prisma);
-      });
-
+    it('returns a 6-digit code and creates NO database row (elder has no email)', async () => {
       const result = await service.generateCode('caregiver-uuid', {
-        email: 'elder@x.com',
         firstName: 'E',
         lastName: 'L',
         dateOfBirth: new Date('1940-01-01'),
       });
 
       expect(result.code).toMatch(/^\d{6}$/);
-      expect(result.pairingToken).toBe('pairing.jwt.token');
-      expect(result.elderId).toBe('elder-uuid');
-    });
-
-    it('rejects if email already registered', async () => {
-      prisma.user.findUnique.mockResolvedValue({ id: 'someone' });
-      await expect(
-        service.generateCode('c', {
-          email: 'taken@x.com',
-          firstName: 'A',
-          lastName: 'B',
-          dateOfBirth: new Date('1940-01-01'),
-        }),
-      ).rejects.toBeInstanceOf(ConflictException);
+      expect(typeof result.expiresAt).toBe('string');
+      // Pending pairing is stored only in Valkey — no elder persisted yet.
+      expect(valkey.setNxEx).toHaveBeenCalledTimes(1);
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(prisma.careLink.create).not.toHaveBeenCalled();
     });
   });
 
   describe('redeemCode', () => {
-    const elderId = 'elder-uuid';
-    const validPairing = {
-      id: 'p1',
-      code: '123456',
-      elderId,
-      expiresAt: new Date(Date.now() + 60_000),
-      redeemedAt: null,
-    };
+    const pending = JSON.stringify({
+      caregiverId: 'caregiver-uuid',
+      firstName: 'E',
+      lastName: 'L',
+      dateOfBirth: new Date('1940-01-01').toISOString(),
+    });
 
-    it('returns ELDER tokens on valid redemption', async () => {
+    it('creates the elder + tokens on valid redemption', async () => {
       valkey.incrWithExpire.mockResolvedValue(1);
-      prisma.devicePairing.findUnique.mockResolvedValue(validPairing);
-      prisma.user.findUnique.mockResolvedValue({ id: elderId, role: UserRole.ELDER });
-      const tokens = await service.redeemCode(elderId, { code: '123456' });
-      expect(tokens).toEqual({ accessToken: 'a', refreshToken: 'r' });
+      valkey.get.mockResolvedValue(pending);
+      prisma.user.create.mockResolvedValue({ id: 'elder-uuid', role: UserRole.ELDER });
+      prisma.device.create.mockResolvedValue({ id: 'device-uuid' });
+
+      const result = await service.redeemCode({ code: '123456' });
+
+      expect(prisma.user.create).toHaveBeenCalledTimes(1);
+      expect(prisma.careLink.create).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({ accessToken: 'a', refreshToken: 'r', deviceId: 'device-uuid' });
+      expect(valkey.del).toHaveBeenCalled(); // pending + attempts cleared
       expect(authService.issueTokens).toHaveBeenCalledTimes(1);
-      expect(valkey.del).toHaveBeenCalled(); // attempt counter cleared on success
     });
 
-    it('returns 410 (GoneException) when code expired', async () => {
+    it('returns 404 when the code has no pending pairing (invalid/expired)', async () => {
       valkey.incrWithExpire.mockResolvedValue(1);
-      prisma.devicePairing.findUnique.mockResolvedValue({
-        ...validPairing,
-        expiresAt: new Date(Date.now() - 1),
-      });
-      await expect(service.redeemCode(elderId, { code: '123456' })).rejects.toBeInstanceOf(
-        GoneException,
-      );
-    });
-
-    it('returns 409 when code already redeemed', async () => {
-      valkey.incrWithExpire.mockResolvedValue(1);
-      prisma.devicePairing.findUnique.mockResolvedValue({
-        ...validPairing,
-        redeemedAt: new Date(),
-      });
-      await expect(service.redeemCode(elderId, { code: '123456' })).rejects.toBeInstanceOf(
-        ConflictException,
-      );
-    });
-
-    it('returns 404 when code does not exist', async () => {
-      valkey.incrWithExpire.mockResolvedValue(1);
-      prisma.devicePairing.findUnique.mockResolvedValue(null);
-      await expect(service.redeemCode(elderId, { code: '999999' })).rejects.toBeInstanceOf(
+      valkey.get.mockResolvedValue(null);
+      await expect(service.redeemCode({ code: '999999' })).rejects.toBeInstanceOf(
         NotFoundException,
       );
-    });
-
-    it('returns 404 when code belongs to different elder (no enumeration)', async () => {
-      valkey.incrWithExpire.mockResolvedValue(1);
-      prisma.devicePairing.findUnique.mockResolvedValue({
-        ...validPairing,
-        elderId: 'other-elder',
-      });
-      await expect(service.redeemCode(elderId, { code: '123456' })).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      expect(prisma.user.create).not.toHaveBeenCalled();
     });
 
     it('returns 429 after 5 failed attempts (brute-force throttle)', async () => {
       valkey.incrWithExpire.mockResolvedValue(6);
       try {
-        await service.redeemCode(elderId, { code: '000000' });
+        await service.redeemCode({ code: '000000' });
         fail('expected 429');
       } catch (e) {
         expect(e).toBeInstanceOf(HttpException);

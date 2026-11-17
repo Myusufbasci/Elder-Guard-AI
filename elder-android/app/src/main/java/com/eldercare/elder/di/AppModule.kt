@@ -33,7 +33,7 @@ object AppModule {
     @Singleton
     fun provideBaseUrl(): BaseUrl = BaseUrl(
         // Override at build time via gradle property if needed.
-        if (BuildConfig.DEBUG) "https://holders-toilet-she-perceived.trycloudflare.com/" else "https://api.eldercare.example/"
+        if (BuildConfig.DEBUG) "http://167.172.163.112/" else "http://167.172.163.112/"
     )
 
     @Provides
@@ -55,6 +55,11 @@ object AppModule {
         return OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
+            // Hard upper bound on a full call (incl. auth retry). Without this a
+            // stuck socket could leave the UI on "Connecting…" indefinitely.
+            .callTimeout(45, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .addInterceptor(authInterceptor)
             .addInterceptor(log)
             .authenticator(refreshAuthenticator)

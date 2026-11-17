@@ -9,8 +9,15 @@ import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE, decodeJwtPayload } from './l
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow auth pages and API routes through
-  if (pathname.startsWith('/login') || pathname.startsWith('/register') || pathname.startsWith('/api/')) {
+  // Allow auth pages, the public email-verification page, and API routes through.
+  // /verify-email must be reachable while logged out — the user clicks the link
+  // in their email, possibly on a device with no session.
+  if (
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/register') ||
+    pathname.startsWith('/verify-email') ||
+    pathname.startsWith('/api/')
+  ) {
     // If already logged in and visiting /login or /register, redirect to /elders
     if (pathname.startsWith('/login') || pathname.startsWith('/register')) {
       const accessToken = request.cookies.get(ACCESS_TOKEN_COOKIE)?.value;
@@ -54,8 +61,9 @@ export const config = {
      * Match all request paths except:
      * - api/ routes (handled by Route Handlers)
      * - _next/ (static files)
-     * - favicon.ico, images, etc.
+     * - favicon.ico + App Router metadata icons (icon.png, apple-icon.png) — these
+     *   are public assets and must not be redirected to /login.
      */
-    '/((?!api|_next/static|_next/image|favicon\\.ico).*)',
+    '/((?!api|_next/static|_next/image|favicon\\.ico|icon\\.png|apple-icon\\.png).*)',
   ],
 };

@@ -101,7 +101,7 @@ describe('AiSummaryService', () => {
     expect(mockPrisma.notificationLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         content: expect.objectContaining({
-          summary_text: expect.stringContaining('Routine AI summary unavailable'),
+          summary_text: expect.stringContaining('oluşturulamadı'),
         }),
       }),
     });
@@ -119,7 +119,7 @@ describe('AiSummaryService', () => {
     expect(mockPrisma.notificationLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         content: expect.objectContaining({
-          summary_text: expect.stringContaining('Routine AI summary unavailable'),
+          summary_text: expect.stringContaining('oluşturulamadı'),
         }),
       }),
     });
@@ -198,6 +198,6 @@ describe('AiSummaryService', () => {
     await service.generateDailySummaries();
 
     const content = mockPrisma.notificationLog.create.mock.calls[0][0].data.content;
-    expect(content.summary_text).toContain('Routine AI summary unavailable');
+    expect(content.summary_text).toContain('oluşturulamadı');
   });
 });

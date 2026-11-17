@@ -1,12 +1,9 @@
 import { Type } from 'class-transformer';
-import { IsDate, IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsDate, IsString, MaxLength, MinLength } from 'class-validator';
 
 // Caregiver creates an elder profile + pairing code in one call.
+// Elders have no email — they never log in by email (paired flow only).
 export class CreateElderDto {
-  @IsEmail()
-  @MaxLength(254)
-  email!: string;
-
   @IsString()
   @MinLength(1)
   @MaxLength(80)

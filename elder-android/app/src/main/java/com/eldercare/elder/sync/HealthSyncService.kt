@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.eldercare.elder.MainActivity
 import com.eldercare.elder.R
@@ -55,10 +56,24 @@ class HealthSyncService : Service() {
         super.onCreate()
         createChannel()
         val notif = buildNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(NOTIF_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH)
-        } else {
-            startForeground(NOTIF_ID, notif)
+        // Android 14+ requires ACTIVITY_RECOGNITION / BODY_SENSORS / HIGH_SAMPLING_RATE_SENSORS
+        // granted at runtime to attach FGS type=health. Without it the system throws
+        // SecurityException during startForeground; swallow and stopSelf so pairing UX
+        // is not broken before the user has been prompted for sensor permissions.
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(NOTIF_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH)
+            } else {
+                startForeground(NOTIF_ID, notif)
+            }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "FGS type=health denied; sensor runtime permission missing", e)
+            stopSelf()
+            return
+        } catch (e: IllegalStateException) {
+            Log.w(TAG, "FGS start refused (app not eligible)", e)
+            stopSelf()
+            return
         }
         scope.launch { heartbeatLoop() }
     }
@@ -80,8 +95,13 @@ class HealthSyncService : Service() {
     }
 
     private suspend fun tick() {
+        // Session heartbeat: validates the elder still exists server-side. On 401
+        // (caregiver removed this elder) RefreshAuthenticator clears tokens → logout.
+        runCatching { api.getMe() }
         val deviceId = tokenStore.deviceId() ?: return
-        val pull = healthConnect.pullChanges(syncTokenStore)
+        // Best-effort HC pull — location is sent even when health data is
+        // unavailable (the two are independent; location must not depend on it).
+        val pull = runCatching { healthConnect.pullChanges(syncTokenStore) }.getOrNull()
         val fix = locationManager.lastReducedFix()
         val locSamples: List<TelemetrySample> = fix?.let {
             listOf(
@@ -89,13 +109,13 @@ class HealthSyncService : Service() {
                 TelemetrySample(it.timeIso, "location_lng", it.longitude, null),
             )
         } ?: emptyList()
-        val payload = pull.samples + locSamples
+        val payload = (pull?.samples ?: emptyList()) + locSamples
         if (payload.isEmpty()) return
         for (batch in payload.chunked(200)) {
             val response = api.ingestTelemetry(TelemetryRequest(deviceId, batch))
             if (!response.isSuccessful) return
         }
-        for ((type, token) in pull.newTokens) syncTokenStore.setToken(type, token)
+        if (pull != null) for ((type, token) in pull.newTokens) syncTokenStore.setToken(type, token)
     }
 
     private fun createChannel() {
@@ -137,6 +157,7 @@ class HealthSyncService : Service() {
     }
 
     companion object {
+        private const val TAG = "HealthSyncService"
         private const val CHANNEL_ID = "eldercare_sync"
         private const val NOTIF_ID = 1001
         private const val HEARTBEAT_MS = 5L * 60L * 1000L

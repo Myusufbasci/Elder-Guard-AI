@@ -32,3 +32,14 @@ export function isTokenExpired(token: string): boolean {
 export function getApiUrl(): string {
   return process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 }
+
+/**
+ * Whether to mark auth cookies as Secure.
+ * Defaults to NODE_ENV==='production', but can be overridden with COOKIE_SECURE=false
+ * when the deployment serves over plain HTTP (e.g., a VPS without TLS yet).
+ */
+export function isCookieSecure(): boolean {
+  if (process.env.COOKIE_SECURE === 'false') return false;
+  if (process.env.COOKIE_SECURE === 'true') return true;
+  return process.env.NODE_ENV === 'production';
+}

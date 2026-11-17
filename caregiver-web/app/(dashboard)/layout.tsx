@@ -1,11 +1,12 @@
-import Sidebar from '@/components/Sidebar';
+import DashboardShell from '@/components/DashboardShell';
 import NotificationProvider from '@/components/NotificationProvider';
+import VerifyEmailBanner from '@/components/VerifyEmailBanner';
 
 /**
  * Dashboard layout — Server component.
- * Wraps all authenticated pages with sidebar navigation.
- * Auth guard is handled by middleware.ts (cookie check).
- * NotificationProvider handles FCM foreground toasts.
+ * DashboardShell renders the sidebar + topbar design signature; auth guard is
+ * handled by middleware.ts (cookie check). NotificationProvider handles FCM
+ * foreground toasts.
  */
 export default function DashboardLayout({
   children,
@@ -13,14 +14,11 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <main className="flex-1 ml-64 p-6 lg:p-8">
-        <NotificationProvider>
-          {children}
-        </NotificationProvider>
-      </main>
-    </div>
+    <DashboardShell>
+      <NotificationProvider>
+        <VerifyEmailBanner />
+        {children}
+      </NotificationProvider>
+    </DashboardShell>
   );
 }
-

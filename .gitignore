@@ -13,3 +13,12 @@ backend/firebase-credentials.json
 .agentignore
 examples/
 start-dev.bat
+
+# Local secrets, handoff archives, and database inspection scripts
+server-secrets.txt
+.claude/
+/*.zip
+/*.sql
+
+# Keep configuration templates in source control
+!.env.example

@@ -3,8 +3,12 @@
 
 model User {
   id           String   @id @default(uuid()) @db.Uuid
-  email        String   @unique
-  passwordHash String?  // null for elder accounts created by caregiver (paired flow)
+  // Nullable: elder accounts (paired flow) have no email. Postgres treats each
+  // NULL as distinct, so @unique still allows many email-less elders.
+  email         String?  @unique
+  passwordHash  String?  // null for elder accounts created by caregiver (paired flow)
+  // Caregiver email-verification flag. Elders are never asked to verify (no email).
+  emailVerified Boolean  @default(false)
   role         UserRole
   firstName    String
   lastName     String

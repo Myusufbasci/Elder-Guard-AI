@@ -8,7 +8,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 // For each active elder (has ≥1 CareLink):
 //   1. Query telemetry_1m continuous aggregate for last 24h
 //   2. Compute pre-processed metadata (median, MAD, Modified Z-Score per metric)
-//   3. Call Gemini gemini-2.5-flash with Structured Outputs (AGENTS.md Rule 14)
+//   3. Call Gemini gemini-3.5-flash with Structured Outputs (AGENTS.md Rule 14)
 //   4. Validate response against deny-list (case-insensitive)
 //   5. If forbidden term found → use fallback template
 //   6. Save to NotificationLog (audit trail)
@@ -23,9 +23,15 @@ const DENY_LIST = [
   'weather', 'holiday', 'vacation',
 ];
 
-const GEMINI_MODEL = 'gemini-2.5-flash';
-const MAX_RETRIES = 3;
-const BASE_DELAY_MS = 2000;
+// Primary model first; if it is overloaded (503 "high demand") we retry, then
+// fall back to the next model so the summary still gets generated for real.
+const GEMINI_MODELS = ['gemini-3.5-flash', 'gemini-2.5-flash'];
+const MAX_RETRIES = 2; // attempts per model
+const BASE_DELAY_MS = 1500;
+
+// Transient Gemini errors worth retrying / failing over to the next model.
+const TRANSIENT_GEMINI_ERROR =
+  /(RESOURCE_EXHAUSTED|429|503|UNAVAILABLE|overloaded|high demand|Service Unavailable|fetch failed|ETIMEDOUT|ECONNRESET)/i;
 
 interface AiSummaryResponse {
   status_category: 'stable' | 'needs_attention' | 'critical';
@@ -137,17 +143,18 @@ export class AiSummaryService {
       summary = this.buildFallback(elder, telemetryData, anomalyCount);
     }
 
-    // 5. Save to NotificationLog for each caregiver (audit trail)
-    for (const link of elder.careLinks) {
-      await this.prisma.notificationLog.create({
-        data: {
-          userId: link.caregiverId,
-          type: 'daily_summary',
-          content: JSON.parse(JSON.stringify(summary)),
-          deliveryStatus: 'delivered',
-        },
-      });
-    }
+    // 5. Save to NotificationLog under the ELDER's user id (not the caregiver's), so
+    //    the dashboard's getSummary(elderId) — which queries userId = elderId — can
+    //    retrieve it. Storing under caregiverId made the summary invisible on the
+    //    elder detail page. One row per elder (1 caregiver : 1 elder).
+    await this.prisma.notificationLog.create({
+      data: {
+        userId: elder.userId,
+        type: 'daily_summary',
+        content: JSON.parse(JSON.stringify(summary)),
+        deliveryStatus: 'delivered',
+      },
+    });
   }
 
   private async callGeminiWithRetry(
@@ -156,31 +163,43 @@ export class AiSummaryService {
     anomalyCount: number,
   ): Promise<AiSummaryResponse> {
     const prompt = this.buildPrompt(elder, telemetry, anomalyCount);
+    let lastError: Error | undefined;
 
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      try {
-        return await this.callGemini(prompt);
-      } catch (error) {
-        const isRateLimit =
-          (error as Error).message?.includes('RESOURCE_EXHAUSTED') ||
-          (error as Error).message?.includes('429');
-
-        if (isRateLimit && attempt < MAX_RETRIES - 1) {
-          const delay = BASE_DELAY_MS * Math.pow(2, attempt);
+    // Try each model in order; within a model, retry transient errors with
+    // exponential backoff. Move to the next model when the current one is
+    // overloaded/unavailable — this is what saves the summary when the primary
+    // model returns 503 "high demand".
+    for (const modelName of GEMINI_MODELS) {
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        try {
+          return await this.callGemini(prompt, modelName);
+        } catch (error) {
+          lastError = error as Error;
+          const transient = TRANSIENT_GEMINI_ERROR.test(lastError.message ?? '');
+          if (transient && attempt < MAX_RETRIES - 1) {
+            const delay = BASE_DELAY_MS * Math.pow(2, attempt);
+            this.logger.warn(
+              `Gemini ${modelName} transient error (attempt ${attempt + 1}/${MAX_RETRIES}), retrying in ${delay}ms`,
+            );
+            await this.sleep(delay);
+            continue;
+          }
           this.logger.warn(
-            `Gemini rate limited (attempt ${attempt + 1}/${MAX_RETRIES}), retrying in ${delay}ms`,
+            `Gemini ${modelName} failed: ${lastError.message} — ${
+              modelName === GEMINI_MODELS[GEMINI_MODELS.length - 1]
+                ? 'no more models'
+                : 'trying next model'
+            }`,
           );
-          await this.sleep(delay);
-          continue;
+          break; // move to the next model
         }
-        throw error;
       }
     }
 
-    throw new Error('Gemini API exhausted all retries');
+    throw lastError ?? new Error('Gemini API exhausted all models/retries');
   }
 
-  private async callGemini(prompt: string): Promise<AiSummaryResponse> {
+  private async callGemini(prompt: string, modelName: string): Promise<AiSummaryResponse> {
     const responseSchema = {
           type: SchemaType.OBJECT,
           properties: {
@@ -220,7 +239,7 @@ export class AiSummaryService {
     };
 
     const model = this.genAI.getGenerativeModel({
-      model: GEMINI_MODEL,
+      model: modelName,
       systemInstruction,
       generationConfig: {
         responseMimeType: 'application/json',
@@ -259,9 +278,9 @@ export class AiSummaryService {
     lines.push(`Statistical anomalies detected in last 24h: ${anomalyCount}`);
     lines.push('');
     lines.push(
-      'Provide a factual summary of the readings. ' +
-        'Classify the overall status as stable, needs_attention, or critical. ' +
-        'Do NOT mention any diseases, medications, or environmental factors.',
+      'Ölçümlerin olgusal bir özetini TÜRKÇE ver. ' +
+        'Genel durumu stable, needs_attention veya critical olarak sınıflandır. ' +
+        'Hiçbir hastalık, ilaç veya çevresel faktörden bahsetme.',
     );
 
     return lines.join('\n');
@@ -278,15 +297,16 @@ export class AiSummaryService {
     anomalyCount: number,
   ): AiSummaryResponse {
     const steps = this.getMetricValue(telemetry, 'steps');
-    const sleepMin = this.getMetricValue(telemetry, 'sleep_duration');
-    const sleepHours = sleepMin > 0 ? (sleepMin / 60).toFixed(1) : 'N/A';
+    // sleep_duration is stored in SECONDS → hours = value / 3600 (was /60 → showed minutes mislabelled as hours)
+    const sleepSeconds = this.getMetricValue(telemetry, 'sleep_duration');
+    const sleepHours = sleepSeconds > 0 ? (sleepSeconds / 3600).toFixed(1) : 'N/A';
     const rhr = this.getMetricValue(telemetry, 'resting_heart_rate');
 
     const summaryText =
-      `Routine AI summary unavailable. ${elder.user.firstName} recorded ` +
-      `${steps.toFixed(0)} steps, ${sleepHours} hours sleep, average resting ` +
-      `HR ${rhr.toFixed(0)} bpm. Statistical analysis flagged ${anomalyCount} ` +
-      `metrics outside normal variance.`;
+      `Otomatik günlük AI özeti şu anda oluşturulamadı. ${elder.user.firstName}, ` +
+      `${steps.toFixed(0)} adım, ${sleepHours} saat uyku ve ortalama ` +
+      `${rhr.toFixed(0)} bpm dinlenme nabzı kaydetti. İstatistiksel analiz, ` +
+      `normal değişkenlik dışında ${anomalyCount} ölçüm işaretledi.`;
 
     return {
       status_category: anomalyCount > 0 ? 'needs_attention' : 'stable',
@@ -315,7 +335,7 @@ export class AiSummaryService {
         SUM(t.sample_count)::bigint AS sample_count
       FROM telemetry_1m t
       JOIN devices d ON d.id = t.device_id
-      WHERE d.elder_id = $1::uuid
+      WHERE d."elderId" = $1::uuid
         AND t.bucket > NOW() - INTERVAL '24 hours'
       GROUP BY t.metric
     `;

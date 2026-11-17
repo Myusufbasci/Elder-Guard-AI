@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.eldercare.elder.data.TokenStore
+import com.eldercare.elder.data.UserRole
 import com.eldercare.elder.sync.WorkManagerScheduler
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
@@ -22,7 +23,9 @@ class EldercareApplication : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
-        if (tokenStore.hasTokens()) {
+        // Only the elder role drives Health Connect telemetry uploads; caregivers
+        // don't need WorkManager periodic sync.
+        if (tokenStore.hasTokens() && tokenStore.role() == UserRole.ELDER) {
             scheduler.enqueuePeriodicSync()
         }
     }

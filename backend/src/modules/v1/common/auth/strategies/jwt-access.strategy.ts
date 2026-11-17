@@ -29,7 +29,9 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy, 'jwt-access') 
       purpose: payload.purpose,
       role: user.role,
       jti: payload.jti,
-      email: user.email,
+      // email is nullable on the User now (elders have none); AuthenticatedUser
+      // keeps it as optional string.
+      email: user.email ?? undefined,
     };
   }
 }

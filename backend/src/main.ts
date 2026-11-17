@@ -24,8 +24,22 @@ const envSchema = Joi.object({
 
   FIREBASE_CREDENTIALS_PATH: Joi.string().required(),
   GEMINI_API_KEY: Joi.string().required(),
+
+  // Email — optional. Resend (HTTPS, no SMTP port needed) takes priority when set.
+  // When neither RESEND_API_KEY nor SMTP creds are set, mailer runs in no-op mode.
+  RESEND_API_KEY: Joi.string().allow('').optional(),
+  SMTP_HOST: Joi.string().default('smtp.gmail.com'),
+  SMTP_PORT: Joi.number().port().default(465),
+  SMTP_USER: Joi.string().allow('').optional(),
+  SMTP_PASS: Joi.string().allow('').optional(),
+  MAIL_FROM: Joi.string().allow('').optional(),
+  WEB_APP_URL: Joi.string().default('http://localhost:3001'),
+
+  // Demo only: comma-separated elder UUIDs auto-linked to every new caregiver
+  // (so shared demo profiles show in every account). Empty/unset → normal flow.
+  DEMO_ELDER_IDS: Joi.string().allow('').optional(),
   LOG_LEVEL: Joi.string()
-    .valid('error', 'warn', 'log', 'debug', 'verbose')
+    .valid('error', 'warn', 'log', 'info', 'debug', 'verbose')
     .default('log'),
 }).unknown(true);
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 
 /**
  * Pairing code display page — Client component.
@@ -10,18 +11,18 @@ import { useState, useEffect, useCallback } from 'react';
 interface PairingData {
   code: string;
   expiresAt: string;
-  elderId: string;
 }
 
 export default function PairElderPage() {
+  const router = useRouter();
   const [step, setStep] = useState<'form' | 'code'>('form');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [pairingData, setPairingData] = useState<PairingData | null>(null);
   const [timeLeft, setTimeLeft] = useState(0);
+  const [paired, setPaired] = useState(false);
 
-  // Form fields for creating elder profile
-  const [email, setEmail] = useState('');
+  // Form fields for creating elder profile (elders have no email)
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
@@ -43,6 +44,40 @@ export default function PairElderPage() {
     return () => clearInterval(interval);
   }, [pairingData]);
 
+  // Poll pairing status by CODE. The elder is created only when the device redeems
+  // the code, so we watch for status === 'paired' and then jump to the new elder.
+  useEffect(() => {
+    if (!pairingData || paired) return;
+    const code = pairingData.code;
+    let cancelled = false;
+
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch('/api/auth/proxy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            path: `/v1/caregiver/elders/pairing-status?code=${encodeURIComponent(code)}`,
+            method: 'GET',
+          }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && data?.data?.status === 'paired') {
+          setPaired(true);
+          clearInterval(poll);
+          const elderId = data.data.elderId as string | undefined;
+          // Brief success flash, then jump to the freshly-created elder (or the list).
+          setTimeout(() => router.push(elderId ? `/elders/${elderId}` : '/elders'), 1600);
+        }
+      } catch {
+        /* transient network error — keep polling */
+      }
+    }, 3000);
+
+    return () => { cancelled = true; clearInterval(poll); };
+  }, [pairingData, paired, router]);
+
   const generateCode = useCallback(async () => {
     setError('');
     setLoading(true);
@@ -54,7 +89,7 @@ export default function PairElderPage() {
         body: JSON.stringify({
           path: '/v1/caregiver/elders',
           method: 'POST',
-          body: { email, firstName, lastName, dateOfBirth },
+          body: { firstName, lastName, dateOfBirth },
         }),
       });
 
@@ -72,7 +107,7 @@ export default function PairElderPage() {
     } finally {
       setLoading(false);
     }
-  }, [email, firstName, lastName, dateOfBirth]);
+  }, [firstName, lastName, dateOfBirth]);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -89,6 +124,14 @@ export default function PairElderPage() {
         </div>
 
         <div className="rounded-2xl bg-surface-900 border border-surface-800 p-8 text-center">
+          {/* Paired success banner */}
+          {paired && (
+            <div className="mb-6 rounded-xl bg-green-500/10 border border-green-500/30 px-5 py-4">
+              <p className="text-green-400 font-semibold text-lg">✓ Cihaz eşleşti!</p>
+              <p className="text-surface-400 text-sm mt-1">Panele yönlendiriliyorsunuz…</p>
+            </div>
+          )}
+
           {/* Code display */}
           <div className="mb-6">
             <p className="text-xs text-surface-500 uppercase tracking-wider mb-3">6-digit pairing code</p>
@@ -96,13 +139,21 @@ export default function PairElderPage() {
               {pairingData.code.split('').map((digit, i) => (
                 <div
                   key={i}
-                  className="w-14 h-16 rounded-xl bg-surface-800 border border-surface-700 flex items-center justify-center text-3xl font-bold text-accent-400 font-mono"
+                  className={`w-14 h-16 rounded-xl border flex items-center justify-center text-3xl font-bold font-mono transition-colors ${paired ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-surface-800 border-surface-700 text-accent-400'}`}
                 >
                   {digit}
                 </div>
               ))}
             </div>
           </div>
+
+          {/* Live pairing status hint */}
+          {!paired && timeLeft > 0 && (
+            <div className="mb-4 flex items-center justify-center gap-2 text-sm text-surface-400">
+              <span className="w-2 h-2 rounded-full bg-accent-400 animate-pulse" />
+              Cihazın bağlanması bekleniyor…
+            </div>
+          )}
 
           {/* Countdown */}
           <div className={`mb-6 ${timeLeft < 60 ? 'text-danger-400' : timeLeft < 300 ? 'text-warning-400' : 'text-surface-400'}`}>
@@ -159,11 +210,6 @@ export default function PairElderPage() {
               <input id="pair-lastname" type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} required disabled={loading}
                 className="w-full px-4 py-3 rounded-xl bg-surface-800/80 border border-surface-700 text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-accent-500/50 transition-all disabled:opacity-50" />
             </div>
-          </div>
-          <div>
-            <label htmlFor="pair-email" className="block text-sm font-medium text-surface-300 mb-1.5">Email</label>
-            <input id="pair-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={loading}
-              className="w-full px-4 py-3 rounded-xl bg-surface-800/80 border border-surface-700 text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-accent-500/50 transition-all disabled:opacity-50" />
           </div>
           <div>
             <label htmlFor="pair-dob" className="block text-sm font-medium text-surface-300 mb-1.5">Date of birth</label>

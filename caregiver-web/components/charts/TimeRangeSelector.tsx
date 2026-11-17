@@ -36,7 +36,7 @@ export default function TimeRangeSelector({ currentRange }: TimeRangeSelectorPro
           onClick={() => handleRangeChange(value)}
           className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
             currentRange === value
-              ? 'bg-accent-500 text-surface-950 shadow-md'
+              ? 'bg-accent-500 text-white shadow-md'
               : 'text-surface-400 hover:text-surface-200 hover:bg-surface-700/60'
           }`}
         >

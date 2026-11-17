@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.eldercare.elder.data.TokenStore
+import com.eldercare.elder.data.UserRole
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -23,7 +24,8 @@ class BootReceiver : BroadcastReceiver() {
             action != Intent.ACTION_LOCKED_BOOT_COMPLETED
         ) return
 
-        if (!tokenStore.hasTokens()) return
+        // Only elder role needs telemetry sync after boot.
+        if (!tokenStore.hasTokens() || tokenStore.role() != UserRole.ELDER) return
         scheduler.enqueuePeriodicSync()
         HealthSyncService.start(context)
     }

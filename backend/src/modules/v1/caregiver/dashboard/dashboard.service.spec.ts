@@ -1,5 +1,6 @@
 import { DashboardService, type ElderSummary } from './dashboard.service';
 import type { PrismaService } from '../../common/prisma/prisma.service';
+import type { AiSummaryService } from '../../anomaly/ai-summary/ai-summary.service';
 
 const createMockPrisma = () => ({
   careLink: { findMany: jest.fn() },
@@ -12,10 +13,15 @@ const createMockPrisma = () => ({
 describe('DashboardService', () => {
   let service: DashboardService;
   let mockPrisma: ReturnType<typeof createMockPrisma>;
+  let mockAiSummary: { processElder: jest.Mock };
 
   beforeEach(() => {
     mockPrisma = createMockPrisma();
-    service = new DashboardService(mockPrisma as unknown as PrismaService);
+    mockAiSummary = { processElder: jest.fn() };
+    service = new DashboardService(
+      mockPrisma as unknown as PrismaService,
+      mockAiSummary as unknown as AiSummaryService,
+    );
   });
 
   describe('listElders', () => {
@@ -26,7 +32,7 @@ describe('DashboardService', () => {
           createdAt: new Date('2026-01-01'),
           elder: {
             dateOfBirth: new Date('1940-01-01'),
-            user: { firstName: 'Alice', lastName: 'Smith', email: 'alice@test.com' },
+            user: { firstName: 'Alice', lastName: 'Smith' },
           },
         },
       ]);
@@ -131,6 +137,29 @@ describe('DashboardService', () => {
           content: expect.objectContaining({ status_category: 'stable' }),
         }),
       );
+    });
+  });
+
+  describe('triggerSummary', () => {
+    it('loads the elder with relations and delegates to AiSummaryService.processElder', async () => {
+      const elder = {
+        userId: 'elder-1',
+        dateOfBirth: new Date('1940-01-01'),
+        user: { firstName: 'Alice', lastName: 'Smith' },
+        careLinks: [{ caregiverId: 'cg-1' }],
+      };
+      mockPrisma.elderProfile.findUnique.mockResolvedValue(elder);
+
+      await service.triggerSummary('elder-1');
+
+      expect(mockAiSummary.processElder).toHaveBeenCalledWith(elder);
+    });
+
+    it('throws NotFoundException when the elder does not exist', async () => {
+      mockPrisma.elderProfile.findUnique.mockResolvedValue(null);
+
+      await expect(service.triggerSummary('missing')).rejects.toThrow();
+      expect(mockAiSummary.processElder).not.toHaveBeenCalled();
     });
   });
 });

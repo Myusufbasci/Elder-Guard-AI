@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-package-lock.json
 *.pnp
 *.pnp.js
 
@@ -39,7 +38,6 @@ coverage/
 *.pid.lock
 
 # Prisma
-prisma/migrations/
 
 # Docker
 .dockerignore

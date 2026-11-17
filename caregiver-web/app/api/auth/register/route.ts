@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE, getApiUrl } from '@/lib/auth';
+import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE, getApiUrl, isCookieSecure } from '@/lib/auth';
 
 /**
  * Route Handler: POST /api/auth/register
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
 
   response.cookies.set(ACCESS_TOKEN_COOKIE, accessToken, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isCookieSecure(),
     sameSite: 'lax',
     path: '/',
     maxAge: 8 * 60 * 60, // 8h — matches ACCESS JWT TTL
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
 
   response.cookies.set(REFRESH_TOKEN_COOKIE, refreshToken, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isCookieSecure(),
     sameSite: 'lax',
     path: '/',
     maxAge: 30 * 24 * 60 * 60, // 30d — matches REFRESH JWT TTL

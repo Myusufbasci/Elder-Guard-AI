@@ -2,9 +2,11 @@ package com.eldercare.elder.ui.pairing
 
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.eldercare.elder.data.TokenStore
+import com.eldercare.elder.data.UserRole
 import com.eldercare.elder.network.EldercareApi
 import com.eldercare.elder.network.RedeemRequest
 import com.eldercare.elder.sync.HealthSyncService
@@ -67,13 +69,29 @@ class PairingViewModel @Inject constructor(
                     _state.value = PairingUiState.Error("Empty response.")
                     return@launch
                 }
+                tokenStore.saveRole(UserRole.ELDER)
                 tokenStore.saveTokens(payload.accessToken, payload.refreshToken)
                 tokenStore.saveDeviceId(payload.deviceId)
-                scheduler.enqueuePeriodicSync()
-                HealthSyncService.start(appContext)
+                // Background sync setup is best-effort: missing Health Connect (emulator),
+                // missing FOREGROUND_SERVICE_HEALTH permission, or WorkManager init issues
+                // must not crash the UI after successful pairing.
+                try {
+                    scheduler.enqueuePeriodicSync()
+                } catch (e: Exception) {
+                    Log.w("PairingViewModel", "WorkManager schedule failed", e)
+                }
+                try {
+                    HealthSyncService.start(appContext)
+                } catch (e: Exception) {
+                    Log.w("PairingViewModel", "HealthSyncService start failed", e)
+                }
                 _state.value = PairingUiState.Success
+            } catch (e: java.net.SocketTimeoutException) {
+                _state.value = PairingUiState.Error("Sunucuya ulaşılamadı (zaman aşımı). İnternet bağlantını kontrol et.")
+            } catch (e: java.io.IOException) {
+                _state.value = PairingUiState.Error("Ağ hatası: ${e.message ?: "bağlantı kurulamadı"}.")
             } catch (e: Exception) {
-                _state.value = PairingUiState.Error(e.message ?: "Network error.")
+                _state.value = PairingUiState.Error(e.message ?: "Beklenmeyen hata.")
             }
         }
     }

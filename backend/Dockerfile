@@ -3,16 +3,21 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files and prisma schema first (prisma postinstall hook needs schema)
 COPY package*.json ./
+COPY prisma ./prisma
 
 # Install dependencies
 RUN npm install --legacy-peer-deps
 
+# Prisma generate — needs DATABASE_URL env var to exist (not to connect).
+# Explicit --schema ensures multi-file schema folder is discovered in Docker.
+ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
+RUN npx prisma generate --schema=prisma/schema
+
 # Copy source code
 COPY src ./src
 COPY tsconfig*.json ./
-COPY prisma ./prisma
 
 # Build application
 RUN npm run build

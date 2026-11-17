@@ -25,6 +25,12 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
+    <!-- Sensors — required at runtime to attach a foreground service of type=health
+         on Android 14+ (otherwise startForeground throws SecurityException). -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <uses-permission android:name="android.permission.BODY_SENSORS" />
+    <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
+
     <!-- Required to detect Health Connect availability (REVERSE Pattern 8) -->
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
@@ -33,7 +39,8 @@
     <application
         android:name=".EldercareApplication"
         android:allowBackup="false"
-        android:icon="@android:drawable/sym_def_app_icon"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:networkSecurityConfig="@xml/network_security_config"

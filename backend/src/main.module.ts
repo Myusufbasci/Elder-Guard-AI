@@ -6,6 +6,7 @@ import { PrismaModule } from './modules/v1/common/prisma/prisma.module';
 import { ValkeyModule } from './modules/v1/common/valkey/valkey.module';
 import { QueueModule } from './modules/v1/common/queue/queue.module';
 import { AuthModule } from './modules/v1/common/auth/auth.module';
+import { MailModule } from './modules/v1/common/mail/mail.module';
 import { PairingModule } from './modules/v1/elder/pairing/pairing.module';
 import { TelemetryModule } from './modules/v1/elder/telemetry/telemetry.module';
 import { AnomalyModule } from './modules/v1/anomaly/anomaly.module';
@@ -42,6 +43,7 @@ const THROTTLER_TIERS = [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
     PrismaModule,
     ValkeyModule,
+    MailModule,
     QueueModule,
     ThrottlerModule.forRoot({
       throttlers: THROTTLER_TIERS,
